@@ -1,0 +1,381 @@
+import "module:std" as std
+import { SpotifyError } from "error.ht"
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+class SpotifyUserEndpoint {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  construct (this.apiClient, this.gqlClient)
+
+  fun me() {
+    return this.apiClient.get_req("/me").then((res: HttpResponse)=>res.data)
+  }
+
+  fun savedTracks({offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "offset": offset ?? 0,
+            "limit": limit ?? 20
+        },
+        "operationName": "fetchLibraryTracks",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse) {
+      var data = res.data
+      
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var trackData = data["data"]["me"]["library"]["tracks"]["items"]
+      
+      var onlyTrackIds = trackData.where(
+        (track: Map) => track["__typename"] == "UserLibraryTrackResponse"
+      )
+      .map((track: Map)=> track["track"]["_uri"].split(":").last)
+      .toList()
+
+      var pagingInfo = data["data"]["me"]["library"]["tracks"]["pagingInfo"]
+
+      return this.apiClient.get_req(
+        "/tracks", 
+        queryParameters: {ids: onlyTrackIds.join(",")}.toJson()
+      ).then((res: HttpResponse) {
+        return {
+          offset: pagingInfo["offset"],
+          limit: pagingInfo["limit"],
+          total: data["data"]["me"]["library"]["tracks"]["totalCount"],
+          items: res.data["tracks"],
+        }.toJson()
+      })
+    })
+  }
+
+  fun savedPlaylists({offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "filters": [
+                "Playlists"
+            ],
+            "order": null,
+            "textFilter": "",
+            "features": [
+                "LIKED_SONGS",
+                "YOUR_EPISODES_V2",
+                "PRERELEASES",
+                "EVENTS"
+            ],
+            "limit": limit ?? 20,
+            "offset": offset ?? 0,
+            "flatten": false,
+            "expandedFolders": [],
+            "folderUri": null,
+            "includeFoldersWhenFlattening": true
+        },
+        "operationName": "libraryV3",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "0082bf82412db50128add72dbdb73e2961d59100b9cbf41fb25c568bd8bc358b"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var playlistData = data["data"]["me"]["libraryV3"]
+
+      var pagingInfo = playlistData["pagingInfo"]
+
+      var items = playlistData["items"]
+      .where((item) => 
+        item["item"]["__typename"] == "PlaylistResponseWrapper" 
+        && item["item"]["data"]["__typename"] == "Playlist"
+      )
+      .map((item) {
+        var id = item["item"]["_uri"].split(":").last
+        var playlist = item["item"]["data"]
+        var ownerV2 = playlist["ownerV2"]["data"]
+        
+        return {
+          id: id,
+          "description": playlist["description"],
+          "external_urls": {
+            "spotify": "https://open.spotify.com/playlist/${id}"
+          },
+          "images": playlist["images"]?["items"].expand((image) => image["sources"]).toList() ?? [],
+          "name": playlist["name"],
+          "owner": {
+            "type": "user",
+            "external_urls": {
+              "spotify": "https://open.spotify.com/user/${ownerV2["id"]}"
+            },
+            "id": ownerV2["id"],
+            "uri": ownerV2["uri"],
+            "display_name": ownerV2["name"],
+            images: ownerV2["avatar"]?["sources"] ?? []
+          },
+          "uri": item["item"]["_uri"],
+        }.toJson()
+      }).toList()
+
+      return {
+        limit: pagingInfo["limit"],
+        offset: pagingInfo["offset"],
+        total: playlistData["totalCount"],
+        items: items,
+      }.toJson()
+    })
+  }
+
+  fun savedAlbums({offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "filters": [
+                "Albums"
+            ],
+            "order": null,
+            "textFilter": "",
+            "features": [
+                "LIKED_SONGS",
+                "YOUR_EPISODES_V2",
+                "PRERELEASES",
+                "EVENTS"
+            ],
+            "limit": limit ?? 20,
+            "offset": offset ?? 0,
+            "flatten": false,
+            "expandedFolders": [],
+            "folderUri": null,
+            "includeFoldersWhenFlattening": true
+        },
+        "operationName": "libraryV3",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "0082bf82412db50128add72dbdb73e2961d59100b9cbf41fb25c568bd8bc358b"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var albumsData = data["data"]["me"]["libraryV3"]
+      var pagingInfo = albumsData["pagingInfo"]
+
+      var ids = albumsData["items"]
+        .where((item) => 
+          item["item"]["__typename"] == "AlbumResponseWrapper" 
+          && item["item"]["data"]["__typename"] == "Album"
+        )
+        .map((item) => item["item"]["_uri"].split(":").last)
+        .toList()
+
+      if (ids.isEmpty) {
+        return {
+          offset: pagingInfo["offset"],
+          limit: pagingInfo["limit"],
+          total: artistData["totalCount"],
+          items: []
+        }.toJson()
+      }
+
+      return this.apiClient.get_req(
+        "/albums",
+        queryParameters: {ids: ids.join(",")}.toJson()
+      ).then((res: HttpResponse) {
+        var data = res.data
+
+        if (SpotifyError.isError(data)) {
+          throw SpotifyError(data)
+        }
+
+        return {
+          offset: pagingInfo["offset"],
+          limit: pagingInfo["limit"],
+          total: albumsData["totalCount"],
+          items: res.data["albums"]
+        }
+      })
+    })
+  }
+
+  fun savedArtists({offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "filters": [
+                "Artists"
+            ],
+            "order": null,
+            "textFilter": "",
+            "features": [
+                "LIKED_SONGS",
+                "YOUR_EPISODES_V2",
+                "PRERELEASES",
+                "EVENTS"
+            ],
+            "limit": limit ?? 20,
+            "offset": offset ?? 0,
+            "flatten": false,
+            "expandedFolders": [],
+            "folderUri": null,
+            "includeFoldersWhenFlattening": true
+        },
+        "operationName": "libraryV3",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "0082bf82412db50128add72dbdb73e2961d59100b9cbf41fb25c568bd8bc358b"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var artistData = data["data"]["me"]["libraryV3"]
+      var pagingInfo = artistData["pagingInfo"]
+
+      var ids = artistData["items"]
+        .where((item) => 
+          item["item"]["__typename"] == "ArtistResponseWrapper" 
+          && item["item"]["data"]["__typename"] == "Artist"
+        )
+        .map((item) => item["item"]["_uri"].split(":").last)
+        .toList()
+
+      if (ids.isEmpty) {
+        return {
+          offset: pagingInfo["offset"],
+          limit: pagingInfo["limit"],
+          total: artistData["totalCount"],
+          items: []
+        }.toJson()
+      }
+
+      return this.apiClient.get_req(
+        "/artists",
+        queryParameters: {ids: ids.join(",")}.toJson()
+      ).then((res: HttpResponse) {
+        var data = res.data
+
+        if (SpotifyError.isError(data)) {
+          throw SpotifyError(data)
+        }
+
+        return {
+          offset: pagingInfo["offset"],
+          limit: pagingInfo["limit"],
+          total: artistData["totalCount"],
+          items: res.data["artists"]
+        }
+      })
+    })
+  }
+
+  fun isTracksSaved(ids: List) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        variables: {
+          uris: ids.map((id) => "spotify:track:${id}").toList(),
+        },
+        operationName: "isCurated",
+        extensions: {
+          persistedQuery: {
+            version: 1,
+            sha256Hash:
+              "e4ed1f91a2cc5415befedb85acf8671dc1a4bf3ca1a5b945a6386101a22e28a6",
+          },
+        },
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var lookup = data["data"]["lookup"]
+
+      return lookup
+      .where((item)=>item["data"]?["__typename"] == "Track")
+      .map((item)=>item["data"]?["isCurated"] ?? false)
+      .toList()
+    })
+  }
+
+  fun isInLibrary(ids: List, {itemType: string}) {
+    assert(itemType == "artist" || itemType == "album")
+
+    return this.gqlClient.post(
+      "",
+      data: {
+        variables: {
+          uris: ids.map((id) => "spotify:${itemType}:${id}").toList(),
+        },
+        operationName: "areEntitiesInLibrary",
+        extensions: {
+          persistedQuery: {
+            version: 1,
+            sha256Hash:
+              "134337999233cc6fdd6b1e6dbf94841409f04a946c5c7b744b09ba0dfe5a85ed",
+          },
+        },
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var lookup = data["data"]["lookup"]
+
+      return lookup
+      .where((item)=>item["data"]?["__typename"].toLowerCase() == itemType)
+      .map((item)=>item["data"]?["saved"] ?? false)
+      .toList()
+    })
+  }
+  
+  fun isPlaylistSaved(playlistId: string) {
+    return this.apiClient.get_req("/playlists/${playlistId}/followers/contains")
+    .then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data[0] ?? false
+    })
+  }
+}

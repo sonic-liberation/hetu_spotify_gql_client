@@ -1,0 +1,86 @@
+import "module:std" as std
+import { SpotifyError } from "error.ht"
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+class SpotifyTrackEndpoint {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  construct (this.apiClient, this.gqlClient)
+
+  fun getTrack(trackId: string) {
+    return this.apiClient.get_req("/tracks/${trackId}").then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun save(trackIds: List) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "uris": trackIds.map((id) => "spotify:track:${id}").toList()
+        },
+        "operationName": "addToLibrary",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun unsave(trackIds: List) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "input": {
+                "curations": [
+                    {
+                        "contextUri": "spotify:collection:tracks",
+                        "curationType": "UNCURATE"
+                    }
+                ],
+                "itemUris": trackIds.map((id) => "spotify:track:${id}").toList()
+            }
+        },
+        "operationName": "applyCurations",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "05b739a3a73091c213385233b9d3ed8a857c2ca29d2eebadb3d04ed12e288697"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+}
+
+export { SpotifyTrackEndpoint}

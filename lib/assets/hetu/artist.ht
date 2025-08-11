@@ -1,0 +1,111 @@
+import "module:std" as std
+import { SpotifyError } from "error.ht"
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+class SpotifyArtistEndpoint {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  construct (this.apiClient, this.gqlClient)
+
+  fun getArtist(artistId: string) {
+    return this.apiClient.get_req("/artists/${artistId}")
+      .then((res: HttpResponse){
+        var data = res.data
+
+        if(SpotifyError.isError(data)) {
+          return SpotifyError(data)
+        }
+
+        return data
+      })
+  }
+
+  fun topTracks(artistId: string, {limit: int, offset: int}) {
+    return this.apiClient.get_req("/artists/${artistId}/top-tracks")
+      .then((res: HttpResponse){
+        var data = res.data
+
+        if(SpotifyError.isError(data)) {
+          return SpotifyError(data)
+        }
+
+        return data
+      })
+  }
+
+  fun albums(artistId: string, {limit: int, offset: int}) {
+    return this.apiClient.get_req(
+      "/artists/${artistId}/albums",
+      queryParameters: {
+        limit: limit,
+        offset: offset,
+      }.toJson()
+    )
+      .then((res: HttpResponse){
+        var data = res.data
+
+        if(SpotifyError.isError(data)) {
+          return SpotifyError(data)
+        }
+
+        return data
+      })
+  }
+
+  fun follow(artistIds: List) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+          "uris": artistIds.map((id) => "spotify:artist:${id}").toList(),
+        },
+        "operationName": "addToLibrary",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun unfollow(artistIds: List) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "uris": artistIds.map((id) => "spotify:artist:${id}").toList(),
+        },
+        "operationName": "removeFromLibrary",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "a3c1ff58e6a36fec5fe1e3a193dc95d9071d96b9ba53c5ba9c1494fb1ee73915"
+            }
+        }
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+}
+
+export { SpotifyArtistEndpoint }

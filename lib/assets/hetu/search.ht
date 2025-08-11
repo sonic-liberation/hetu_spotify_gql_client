@@ -1,0 +1,356 @@
+import "module:std" as std
+import { SpotifyError } from "error.ht"
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+class SpotifySearchEndpoint {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  construct (this.apiClient, this.gqlClient)
+
+  fun convertAlbums(albums: List) -> List {
+    return albums.where((item) => 
+      item["__typename"] == "AlbumResponseWrapper"
+      && item["data"]?["__typename"] == "Album"
+    )
+    .map((item) {
+      var album = item["data"]
+      var id = album["uri"].split(":").last
+      
+      return {
+        id: id,
+        name: album["name"],
+        type: album["type"]?.toLowerCase(),
+        release_date: album["date"]?["year"]?.toString(),
+        release_date_precision: "year",
+        images: album["coverArt"]?["sources"],
+        external_urls: {
+          spotify: "https://open.spotify.com/album/${id}",
+        },
+        artists: album["artists"]?["items"]?.map((artist){
+          var id = artist["uri"].split(":").last
+          return {
+            id: id,
+            uri: artist["uri"],
+            name: artist["profile"]["name"],
+            external_urls: {
+              spotify: "https://open.spotify.com/artist/${id}",
+            },
+          }
+        }).toList() ?? []
+      }.toJson()
+    })
+    .toList()
+  }
+
+  fun convertArtists(artists: List) -> List {
+    return artists.where((item) => 
+      item["__typename"] == "ArtistResponseWrapper"
+      && item["data"]?["__typename"] == "Artist"
+    ).map((data){
+      var artist = data["data"]
+      var id = artist["uri"].split(":").last
+
+      return {
+        id: id,
+        uri: artist["uri"],
+        name: artist["profile"]["name"],
+        images: artist["visuals"]?["avatarImage"]?["sources"] ?? [],
+        external_urls: {
+          spotify: "https://open.spotify.com/artist/${id}",
+        },
+      }.toJson()
+    })
+    .toList()
+  }
+
+  fun convertPlaylists(playlists: List) -> List {
+    return playlists.where((item) => 
+      item["__typename"] == "PlaylistResponseWrapper"
+      && item["data"]?["__typename"] == "Playlist"
+    )
+    .map((data){
+      var playlist = data["data"]
+      var id = playlist["uri"].split(":").last
+
+      var owner = playlist["ownerV2"]["data"]
+      var ownerId = owner["uri"].split(":").last
+
+      return {
+        id: id,
+        uri: playlist["uri"],
+        name: playlist["name"],
+        description: playlist["description"],
+        images: playlist["images"]?["items"]?.expand((image)=>image["sources"])?.toList() ?? [],
+        external_urls: {
+          spotify: "https://open.spotify.com/playlist/${id}",
+        },
+        owner: {
+          id: ownerId,
+          uri: owner["uri"],
+          name: owner["username"],
+          display_name: owner["name"],
+          images: owner["avatar"]?["sources"] ?? [],
+          external_urls: {
+            spotify: "https://open.spotify.com/user/${ownerId}",
+          },
+        }
+      }.toJson()
+    })
+    .toList()
+  }
+
+  fun convertTracks(tracks: List) {
+    var ids = tracks.where((item) => 
+      item["item"]["__typename"] == "TrackResponseWrapper"
+      && item["item"]["data"]?["__typename"] == "Track"
+    ).map((data) {
+      var track = data["item"]["data"]
+      return track["uri"].split(":").last
+    }).toList()
+
+    return this.apiClient.get_req(
+      "/tracks",
+      queryParameters: {
+        "ids": ids.join(","),
+      }.toJson()
+    ).then((res){
+      var data = res.data
+
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data["tracks"]
+    })
+  }
+
+  fun all(query: string, {offset: int, limit: int, topResults: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+          "searchTerm": query,
+          "offset": offset ?? 0,
+          "limit": limit ?? 10,
+          "numberOfTopResults": topResults ?? 5,
+          "includeAudiobooks": false,
+          "includeArtistHasConcertsField": false,
+          "includePreReleases": false,
+          "includeLocalConcertsField": false,
+          "includeAuthors": false
+        },
+        "operationName": "searchDesktop",
+        "extensions": {
+          "persistedQuery": {
+            "version": 1,
+            "sha256Hash": "d9f785900f0710b31c07818d617f4f7600c1e21217e80f5b043d1e78d74e6026"
+          }
+        }
+      }.toJson()
+    ).then((res: HttpResponse) {
+      var data = res.data
+
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var searchData = data["data"]["searchV2"]
+      var albums = this.convertAlbums(searchData["albumsV2"]["items"])
+      var artists = this.convertArtists(searchData["artists"]["items"])
+      var playlists = this.convertPlaylists(searchData["playlists"]["items"])
+      var tracks = this.convertTracks(searchData["tracksV2"]["items"])
+
+      return tracks.then((tracks){
+        return {
+          albums: albums,
+          artists: artists,
+          playlists: playlists,
+          tracks: tracks
+        }.toJson()
+      })
+    })
+  }
+
+  fun albums(query: string, {offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        variables: {
+          includePreReleases: false,
+          numberOfTopResults: 20,
+          searchTerm: query,
+          offset: offset ?? 0,
+          limit: limit ?? 20,
+          includeAudiobooks: false,
+          includeAuthors: false,
+        },
+        operationName: "searchAlbums",
+        extensions: {
+          persistedQuery: {
+            version: 1,
+            sha256Hash:
+              "a71d2c993fc98e1c880093738a55a38b57e69cc4ce5a8c113e6c5920f9513ee2",
+          },
+        },
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var searchData = data["data"]["searchV2"]["albumsV2"]
+
+      var pagingInfo = searchData["pagingInfo"]
+
+      var items = this.convertAlbums(searchData["items"])
+
+      return {
+        total: searchData["totalCount"],
+        limit: pagingInfo["limit"],
+        offset: pagingInfo["nextOffset"],
+        items: items,
+      }.toJson()
+    })
+  }
+
+  fun artists(query: string, {offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        variables: {
+          includePreReleases: false,
+          numberOfTopResults: 20,
+          searchTerm: query,
+          offset: offset ?? 0,
+          limit: limit ?? 20,
+          includeAudiobooks: true,
+          includeAuthors: false,
+        },
+        operationName: "searchArtists",
+        extensions: {
+          persistedQuery: {
+            version: 1,
+            sha256Hash:
+              "0e6f9020a66fe15b93b3bb5c7e6484d1d8cb3775963996eaede72bac4d97e909",
+          },
+        },
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var searchData = data["data"]["searchV2"]["artists"]
+
+      var pagingInfo = searchData["pagingInfo"]
+
+      var items = this.convertArtists(searchData["items"])
+
+      return {
+        total: searchData["totalCount"],
+        limit: pagingInfo["limit"],
+        offset: pagingInfo["nextOffset"],
+        items: items,
+      }.toJson()
+    })
+  }
+
+  fun playlists(query: string, {offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        variables: {
+          includePreReleases: false,
+          numberOfTopResults: 20,
+          searchTerm: query,
+          offset: offset ?? 0,
+          limit: limit ?? 20,
+          includeAudiobooks: true,
+          includeAuthors: false,
+        },
+        operationName: "searchPlaylists",
+        extensions: {
+          persistedQuery: {
+            version: 1,
+            sha256Hash:
+              "fc3a690182167dbad20ac7a03f842b97be4e9737710600874cb903f30112ad58",
+          },
+        },
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var searchData = data["data"]["searchV2"]["playlists"]
+
+      var pagingInfo = searchData["pagingInfo"]
+
+      var items = this.convertPlaylists(searchData["items"])
+
+      return {
+        total: searchData["totalCount"],
+        limit: pagingInfo["limit"],
+        offset: pagingInfo["nextOffset"],
+        items: items,
+      }.toJson()
+    })
+  }
+
+  fun tracks(query: string, {offset: int, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        variables: {
+          includePreReleases: false,
+          numberOfTopResults: 20,
+          searchTerm: query,
+          offset: offset ?? 0,
+          limit: limit ?? 20,
+          includeAudiobooks: true,
+          includeAuthors: false,
+        },
+        operationName: "searchTracks",
+        extensions: {
+          persistedQuery: {
+            version: 1,
+            sha256Hash:
+              "bc1ca2fcd0ba1013a0fc88e6cc4f190af501851e3dafd3e1ef85840297694428",
+          },
+        },
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var searchData = data["data"]["searchV2"]["tracksV2"]
+
+      var pagingInfo = searchData["pagingInfo"]
+
+      var items = this.convertTracks(searchData["items"])
+
+      return items.then((items) {
+        return {
+          total: searchData["totalCount"],
+          limit: pagingInfo["limit"],
+          offset: pagingInfo["nextOffset"],
+          items: items,
+        }.toJson()
+      })
+    })
+  }
+}
+
+export { SpotifySearchEndpoint }

@@ -1,0 +1,17 @@
+
+class SpotifyError {
+  var status: int
+  var message: string
+
+  construct (e: Map) {
+    this.status = e["error"]["status"]
+    this.message = e["error"]["message"]
+  }
+
+
+  static fun isError(e: Map) -> bool {
+    return e is Map && e["error"] != null 
+  }
+}
+
+export { SpotifyError }

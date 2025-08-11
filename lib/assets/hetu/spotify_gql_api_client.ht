@@ -1,0 +1,56 @@
+import "module:std" as std
+import { SpotifyAlbumEndpoint } from "album.ht"
+import { SpotifyArtistEndpoint } from "artist.ht"
+import { SpotifyPlaylistEndpoint } from "playlist.ht"
+import { SpotifySearchEndpoint } from "search.ht"
+import { SpotifyTrackEndpoint } from "track.ht"
+import { SpotifyUserEndpoint } from "user.ht"
+import { SpotifyBrowseEndpoint } from "browse.ht"
+
+var HttpClient = std.HttpClient
+var HttpBaseOptions = std.HttpBaseOptions
+
+class SpotifyGqlApi {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  var album: SpotifyAlbumEndpoint
+  var artist: SpotifyArtistEndpoint
+  var browse: SpotifyBrowseEndpoint
+  var playlist: SpotifyPlaylistEndpoint
+  var search: SpotifySearchEndpoint
+  var track: SpotifyTrackEndpoint
+  var user: SpotifyUserEndpoint
+
+  construct (accessToken: string){
+    this.setAccessToken(accessToken)
+  }
+
+  fun setAccessToken(accessToken: string) {
+    var headers = Map()
+    headers["Authorization"] = "Bearer ${accessToken}"
+    
+    this.apiClient = HttpClient(
+      HttpBaseOptions(
+        baseUrl: "https://api.spotify.com/v1",
+        headers: headers
+      )
+    )
+    this.gqlClient = HttpClient(
+      HttpBaseOptions(
+        baseUrl: "https://api-partner.spotify.com/pathfinder/v2/query",
+        headers: headers
+      )
+    )
+
+    this.album = SpotifyAlbumEndpoint(this.apiClient, this.gqlClient)
+    this.artist = SpotifyArtistEndpoint(this.apiClient, this.gqlClient)
+    this.browse = SpotifyBrowseEndpoint(this.apiClient, this.gqlClient)
+    this.playlist = SpotifyPlaylistEndpoint(this.apiClient, this.gqlClient)
+    this.search = SpotifySearchEndpoint(this.apiClient, this.gqlClient)
+    this.track = SpotifyTrackEndpoint(this.apiClient, this.gqlClient)
+    this.user = SpotifyUserEndpoint(this.apiClient, this.gqlClient)
+  }
+}
+
+export { SpotifyGqlApi }

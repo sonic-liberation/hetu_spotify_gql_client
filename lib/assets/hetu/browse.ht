@@ -1,0 +1,193 @@
+import "module:std" as std
+import { SpotifyError } from "error.ht"
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+class SpotifyBrowseEndpoint {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  construct (this.apiClient, this.gqlClient)
+
+  fun parseSectionItems(section: Map) -> Map {
+    var id = section["uri"].split(":").last
+
+    return {
+      id: id,
+      uri: section["uri"],
+      title: section["data"]["title"]["transformedLabel"],
+      external_urls: {
+        spotify: "https://open.spotify.com/section/${id}",
+      },
+      items: section["sectionItems"]["items"].map((item) {
+        var wrapperTypeName = item["content"]["__typename"]
+        
+        var contentTypeName = item["content"]["data"]?["__typename"]
+
+        if(wrapperTypeName == "PlaylistResponseWrapper" && contentTypeName == "Playlist") {
+          var id = item["uri"].split(":").last
+          var playlist = item["content"]["data"]
+          var ownerV2 = playlist["ownerV2"]["data"]
+          var ownerId = ownerV2["uri"].split(":")?.last
+
+          
+          return {
+            objectType: "Playlist",
+            id: id,
+            "description": playlist["description"],
+            "external_urls": {
+              "spotify": "https://open.spotify.com/playlist/${id}"
+            },
+            "images": playlist["images"]?["items"].expand((image) => image["sources"]).toList() ?? [],
+            "name": playlist["name"],
+            "owner": {
+              "type": "user",
+              "external_urls": {
+                "spotify": "https://open.spotify.com/user/${ownerId}"
+              },
+              "id": ownerId,
+              "uri": ownerV2["uri"],
+              "display_name": ownerV2["name"],
+              images: ownerV2["avatar"]?["sources"] ?? []
+            },
+            "uri": item["uri"],
+          }.toJson()
+        }
+        else if(wrapperTypeName == "AlbumResponseWrapper" && contentTypeName == "Album") {
+          var id = item["uri"].split(":").last
+          var album = item["content"]["data"]
+          
+          return {
+            objectType: "Album",
+            id: id,
+            name: album["name"],
+            album_type: album["albumType"]?.toLowerCase(),
+            external_urls: {
+              spotify: "https://open.spotify.com/album/${id}"
+            },
+            uri: item["uri"],
+            images: album["coverArt"]?["sources"] ?? [],
+            artists: album["artists"]?["items"]?.map((artist){
+              var id = artist["uri"].split(":").last
+              return {
+                id: id,
+                uri: artist["uri"],
+                name: artist["profile"]["name"],
+                external_urls: {
+                  spotify: "https://open.spotify.com/artist/${id}",
+                }
+              }
+            }).toList() ?? []
+          }.toJson()
+        }
+        else if(wrapperTypeName == "ArtistResponseWrapper" && contentTypeName == "Artist") {
+          var id = item["uri"].split(":").last
+          var artist = item["content"]["data"]
+          
+          return {
+            objectType: "Artist",
+            id: id,
+            name: artist["profile"]["name"],
+            uri: item["uri"],
+            external_urls: {
+              spotify: "https://open.spotify.com/artist/${id}"
+            },
+            images: artist["visuals"]["avatarImage"]?["sources"] ?? [],
+          }.toJson()
+        }
+
+        return null
+      })
+      .where((item) => item != null)
+      .toList()
+    }.toJson()
+  }
+
+  fun home({timeZone: string, spTCookie: string, limit: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "timeZone": timeZone,
+            "sp_t": spTCookie,
+            "facet": "",
+            "sectionItemsLimit": limit ?? 20,
+        },
+        "operationName": "home",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1"
+            }
+        }
+      }.toJson()
+    ).then((res){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var homeData = data["data"]["home"]
+      var homeSections = homeData["sectionContainer"]["sections"]["items"]
+
+      return homeSections
+      .where((section) => 
+        section["data"]["__typename"] == "HomeGenericSectionData"
+        && section["sectionItems"] != null
+        && !section["sectionItems"].isEmpty
+      )
+      .map((section){        
+        return this.parseSectionItems(section)
+      })
+      .where((section)=>!section["items"].isEmpty)
+      .toList()
+    })
+  }
+
+  fun homeSection(id: string, {timeZone: string, spTCookie: string, limit: int, offset: int}) {
+    return this.gqlClient.post(
+      "",
+      data: {
+        "variables": {
+            "uri": "spotify:section:${id}",
+            "timeZone": timeZone,
+            "sp_t": spTCookie,
+            "facet": "",
+            "sectionItemsOffset": offset ?? 0,
+            "sectionItemsLimit": limit ?? 20
+        },
+        "operationName": "homeSection",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "3357ffed7961629ba92b4e0a41514e4d5004a14355c964c23ce442205c9e44a1"
+            }
+        }
+      }.toJson()
+    ).then((res){
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      var homeSection = data["data"]["homeSections"]["sections"][0]["sectionItems"]
+      var pagingInfo = homeSection["pagingInfo"]
+
+      var items = this.parseSectionItems(data["data"]["homeSections"]["sections"][0])["items"]
+
+      print("Items: ${items.length}")
+
+      return {
+        offset: pagingInfo["offset"] ?? offset ?? 0,
+        limit: pagingInfo["limit"] ?? limit ?? 20,
+        total: homeSection["totalCount"] ?? 0,
+        items: items
+      }.toJson()
+    })
+  }
+}
+
+export { SpotifyBrowseEndpoint }

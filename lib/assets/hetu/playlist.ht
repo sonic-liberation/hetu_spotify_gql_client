@@ -1,0 +1,173 @@
+import "module:std" as std
+import { SpotifyError } from "error.ht"
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+class SpotifyPlaylistEndpoint {
+  var apiClient: HttpClient
+  var gqlClient: HttpClient
+
+  construct (this.apiClient, this.gqlClient)
+
+  fun getPlaylist(playlistId: string) {
+    return this.apiClient.get_req("/playlists/${playlistId}").then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun tracks(playlistId: string, {offset: int, limit: int}) {    
+    return this.apiClient.get_req(
+      "/playlists/${playlistId}/tracks",
+      queryParameters: {
+        offset: offset ?? 0,
+        limit: limit ?? 20,
+      }.toJson()
+    ).then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun create(userId: string, {
+    name: string,
+    description: string,
+    public: bool,
+    collaborative: bool
+  }) {
+    assert(name != null && userId != null)
+
+    return this.apiClient.post(
+      "/users/${userId}/playlists",
+      data: {
+        name: name,
+        description: description,
+        public: public ?? false,
+        collaborative: collaborative ?? false
+      }.toJson()
+    ).then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun update(playlistId: string, {
+    name: string,
+    description: string,
+    public: bool,
+    collaborative: bool
+  }) -> void {
+    assert(name != null && playlistId != null)
+
+    var data = {
+        name: name,
+        description: description,
+        public: public,
+        collaborative: collaborative
+    }.toJson()
+
+    if (description == null) {
+      data.remove("description")
+    }
+    if (public == null) {
+      data.remove("public")
+    }
+    if (collaborative == null) {
+      data.remove("collaborative")
+    }
+
+    return this.apiClient.put(
+      "/playlists/${playlistId}",
+      data: data
+    ).then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+    })
+  }
+
+  fun addTracks(playlistId: string, {uris: List, position: int}) {
+    assert(uris != null && playlistId != null)
+
+    return this.apiClient.post(
+      "/playlists/${playlistId}/tracks",
+      data: {
+        uris: uris,
+        position: position ?? 0
+      }.toJson()
+    ).then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun removeTracks(playlistId: string, {uris: List}) {
+    assert(tracks != null && playlistId != null)
+
+    return this.apiClient.delete_req(
+      "/playlists/${playlistId}/tracks",
+      data: {
+        tracks: uris.map((uri)=>{uri: uri}).toList()
+      }.toJson()
+    ).then((res: HttpResponse) {
+      var data = res.data
+
+      if (SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+
+      return data
+    })
+  }
+
+  fun follow(playlistId: string) {
+    return this.apiClient.put(
+      "/playlists/${playlistId}/followers",
+      data: {
+        public: false
+      }.toJson()
+    ).then((res: HttpResponse){
+      var data = res.data
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+      return data
+    })
+  }
+
+  fun unfollow(playlistId: string) {
+    return this.apiClient.delete_req("/playlists/${playlistId}/followers")
+    .then((res: HttpResponse){
+      var data = res.data
+      if(SpotifyError.isError(data)) {
+        throw SpotifyError(data)
+      }
+      return data
+    })
+  }
+}
+
+export { SpotifyPlaylistEndpoint }
