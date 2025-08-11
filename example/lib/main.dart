@@ -175,6 +175,10 @@ Future<void> runHetuSpotifyGqlApi() async {
     //   print('Artist unsave: ${item}')
     // })
 
+    // spotifyApi.artist.related("6LqNN22kT3074XbTVUrhzX").then((item) {
+    //   print('Artist related artists: ${item}')
+    // })
+
     // spotifyApi.track.getTrack("11dFghVXANMlKmJXsNCbNl").then((item) {
     //   print('Get artist: ${item}')
     // })
@@ -207,10 +211,10 @@ Future<void> runHetuSpotifyGqlApi() async {
     //   print('Search tracks: ${item}')
     // })
 
-    spotifyApi.browse.home(timeZone: "Asia/Mumbai", spTCookie: "<your sp_t cookie>")
-    .then((item) {
-      print('Browse home: ${item}')
-    })
+    // spotifyApi.browse.home(timeZone: "Asia/Mumbai", spTCookie: "<your sp_t cookie>")
+    // .then((item) {
+    //   print('Browse home: ${item}')
+    // })
   """);
 
   // Invoke through Dart API
