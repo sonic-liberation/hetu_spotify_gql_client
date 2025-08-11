@@ -1,19 +1,34 @@
+import 'package:flutter/material.dart';
 import 'package:hetu_script/hetu/hetu.dart';
 // import 'package:hetu_script/values.dart';
-import 'package:hetu_spotify_gql_api_client/hetu_spotify_gql_api_client.dart';
+import 'package:hetu_spotify_gql_client/hetu_spotify_gql_client.dart';
 import 'package:hetu_std/hetu_std.dart';
 
 import 'package:dotenv/dotenv.dart';
 
-void runHetuSpotifyGqlApi() async {
+void main(List<String> args) async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await runHetuSpotifyGqlApi();
+
+  runApp(
+    MaterialApp(
+      title: 'Hetu Spotify GQL Client',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: SizedBox(),
+    ),
+  );
+}
+
+Future<void> runHetuSpotifyGqlApi() async {
   final env = DotEnv(includePlatformEnvironment: true)..load();
 
   final hetu = Hetu();
   hetu.init();
   HetuStdLoader.loadBindings(hetu);
 
-  await HetuStdLoader.loadBytecodePureDart(hetu, "../../hetu_std");
-  await HetuSpotifyGqlApiClientLoader.loadBytecodePureDart(hetu, "../");
+  await HetuStdLoader.loadBytecodeFlutter(hetu);
+  await HetuSpotifyGqlApiClientLoader.loadBytecodeFlutter(hetu);
 
   hetu.eval("const ACCESS_TOKEN = '${env["ACCESS_TOKEN"]}'");
   hetu.eval(r"""

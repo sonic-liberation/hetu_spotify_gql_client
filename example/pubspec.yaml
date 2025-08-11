@@ -7,16 +7,27 @@ publish_to: none
 
 environment:
   sdk: ^3.7.2
+  flutter: ">=3.7.0 <4.0.0"
 
 # Add regular dependencies here.
 dependencies:
   hetu_script: ^0.4.2+1
   hetu_std:
-    path: ../../hetu_std
-  hetu_spotify_gql_api_client:
+    git:
+      url: https://github.com/hetu-community/hetu_std.git
+  hetu_spotify_gql_client:
     path: ../
   dotenv: ^4.2.0
+  flutter:
+    sdk: flutter
 
 dev_dependencies:
   lints: ^5.0.0
   test: ^1.24.0
+
+flutter:
+  uses-material-design: true
+  generate: false
+  assets:
+    - packages/hetu_std/assets/bytecode/std.out
+    - packages/hetu_spotify_gql_client/assets/bytecode/spotify_gql_api_client.out
